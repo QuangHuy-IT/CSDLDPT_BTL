@@ -7,9 +7,11 @@ import numpy as np
 def _safe_float(value):
     if value is None:
         return 0.0
-    if isinstance(value, (float, int)) and np.isfinite(value):
-        return float(value)
-    return 0.0
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return v if np.isfinite(v) else 0.0
 
 
 def extract_features(audio_path, sr=22050, n_mfcc=13):

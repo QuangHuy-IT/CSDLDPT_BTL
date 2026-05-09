@@ -19,9 +19,12 @@
         <div class="hero-card">
           <form method="post" enctype="multipart/form-data">
             <label class="upload">
-              <input type="file" name="audio" accept="audio/*" required />
+              <input type="file" name="audio" accept="audio/*" {% if not query_filename %}required{% endif %} />
               <span>Choose audio file</span>
             </label>
+            {% if query_filename %}
+            <input type="hidden" name="existing_file" value="{{ query_filename }}" />
+            {% endif %}
             <label class="select">
               <span>Similarity metric</span>
               <select name="metric">
@@ -81,5 +84,26 @@
       </section>
       {% endif %}
     </main>
+    <script>
+      (function () {
+        const form = document.querySelector("form");
+        if (!form) {
+          return;
+        }
+        const metric = form.querySelector('select[name="metric"]');
+        const fileInput = form.querySelector('input[type="file"][name="audio"]');
+        const existing = form.querySelector('input[name="existing_file"]');
+        if (!metric) {
+          return;
+        }
+        metric.addEventListener("change", () => {
+          const hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+          const hasExisting = existing && existing.value;
+          if (hasFile || hasExisting) {
+            form.requestSubmit();
+          }
+        });
+      })();
+    </script>
   </body>
 </html>

@@ -132,14 +132,16 @@ def index():
 	message = None
 	query_features = None
 	query_audio_url = None
+	query_filename = None
 	metric = "cosine"
 
 	if request.method == "POST":
 		audio_file = request.files.get("audio")
 		metric = request.form.get("metric", "cosine")
-		if not audio_file or not audio_file.filename:
-			message = "Please choose an audio file."
-		else:
+		save_path = None
+		saved_name = None
+		existing_name = (request.form.get("existing_file") or "").strip()
+		if audio_file and audio_file.filename:
 			ext = Path(audio_file.filename).suffix.lower()
 			if ext not in ALLOWED_EXTS:
 				message = "Unsupported file type."
@@ -148,36 +150,80 @@ def index():
 				saved_name = f"{uuid.uuid4().hex}_{safe_name}"
 				save_path = UPLOAD_DIR / saved_name
 				audio_file.save(save_path)
+		elif existing_name:
+			target = (UPLOAD_DIR / existing_name).resolve()
+			if UPLOAD_DIR.resolve() not in target.parents or not target.exists():
+				message = "Please choose an audio file."
+			else:
+				saved_name = existing_name
+				save_path = target
+		else:
+			message = "Please choose an audio file."
 
-				features = extract_features(str(save_path))
-				if not features:
-					message = "Could not extract features from the file."
+		if save_path and not message:
+			features = extract_features(str(save_path))
+			if not features:
+				message = "Could not extract features from the file."
+			else:
+				query_audio_url = url_for("serve_upload", filename=saved_name)
+				query_filename = saved_name
+				query_features = format_query_features(features)
+
+				conn = get_conn()
+				try:
+					with conn:
+						rows = fetch_all_features(conn)
+				finally:
+					conn.close()
+
+				valid_rows = []
+				feature_vectors = []
+				for (
+					audio_id,
+					feature_vector,
+					f0_mean,
+					file_path,
+					instrument,
+					note,
+					octave,
+					dynamic,
+				) in rows:
+					if not feature_vector:
+						continue
+					valid_rows.append(
+						(
+							audio_id,
+							feature_vector,
+							f0_mean,
+							file_path,
+							instrument,
+							note,
+							octave,
+							dynamic,
+						)
+					)
+					feature_vectors.append(feature_vector)
+
+				if not feature_vectors:
+					message = "No features available in the database."
 				else:
-					query_audio_url = url_for("serve_upload", filename=saved_name)
-					query_features = format_query_features(features)
-
-					conn = get_conn()
-					try:
-						with conn:
-							rows = fetch_all_features(conn)
-					finally:
-						conn.close()
-
-					valid_rows = []
-					feature_vectors = []
-					for (
-						audio_id,
-						feature_vector,
-						f0_mean,
-						file_path,
-						instrument,
-						note,
-						octave,
-						dynamic,
-					) in rows:
-						if not feature_vector:
-							continue
-						valid_rows.append(
+					query_vec, feature_vectors = align_vectors(
+						features["feature_vector"], feature_vectors
+					)
+					if query_vec.size == 0:
+						message = "Could not normalize features for comparison."
+					else:
+						query_timbre = drop_features(query_vec, PITCH_INDICES)
+						timbre_vectors = [
+							drop_features(vec, PITCH_INDICES) for vec in feature_vectors
+						]
+						means, stds = standardize_params(timbre_vectors)
+						query_norm = standardize_vector(query_timbre, means, stds)
+						query_pitch = select_pitch_value(
+							safe_positive(features.get("f0_mean")),
+							safe_positive(features.get("f0_median")),
+						)
+						for idx, row in enumerate(valid_rows):
 							(
 								audio_id,
 								feature_vector,
@@ -187,77 +233,44 @@ def index():
 								note,
 								octave,
 								dynamic,
+							) = row
+							item_timbre = timbre_vectors[idx]
+							item_norm = standardize_vector(item_timbre, means, stds)
+							if metric == "euclidean":
+								timbre_sim = euclidean_similarity(query_norm, item_norm)
+							else:
+								timbre_sim = cosine_similarity(query_norm, item_norm)
+								timbre_sim = 0.5 * (timbre_sim + 1.0)
+							item_vec_mean, item_vec_median = extract_pitch_from_vector(
+								feature_vectors[idx]
 							)
-						)
-						feature_vectors.append(feature_vector)
-
-					if not feature_vectors:
-						message = "No features available in the database."
-					else:
-						query_vec, feature_vectors = align_vectors(
-							features["feature_vector"], feature_vectors
-						)
-						if query_vec.size == 0:
-							message = "Could not normalize features for comparison."
-						else:
-							query_timbre = drop_features(query_vec, PITCH_INDICES)
-							timbre_vectors = [
-								drop_features(vec, PITCH_INDICES) for vec in feature_vectors
-							]
-							means, stds = standardize_params(timbre_vectors)
-							query_norm = standardize_vector(query_timbre, means, stds)
-							query_pitch = select_pitch_value(
-								safe_positive(features.get("f0_mean")),
-								safe_positive(features.get("f0_median")),
+							item_mean = item_vec_mean
+							if item_mean is None:
+								item_mean = safe_positive(f0_mean)
+							item_pitch = select_pitch_value(item_mean, item_vec_median)
+							pitch_sim = pitch_similarity(query_pitch, item_pitch)
+							if pitch_sim is None:
+								similarity = timbre_sim
+							else:
+								similarity = (
+									PITCH_WEIGHT * pitch_sim
+									+ (1.0 - PITCH_WEIGHT) * timbre_sim
+								)
+							results.append(
+								{
+									"audio_id": audio_id,
+									"audio_url": url_for("serve_audio", audio_id=audio_id),
+									"similarity": similarity,
+									"instrument": instrument,
+									"note": note,
+									"octave": octave,
+									"dynamic": dynamic,
+									"file_path": file_path,
+								}
 							)
-							for idx, row in enumerate(valid_rows):
-								(
-									audio_id,
-									feature_vector,
-									f0_mean,
-									file_path,
-									instrument,
-									note,
-									octave,
-									dynamic,
-								) = row
-								item_timbre = timbre_vectors[idx]
-								item_norm = standardize_vector(item_timbre, means, stds)
-								if metric == "euclidean":
-									timbre_sim = euclidean_similarity(query_norm, item_norm)
-								else:
-									timbre_sim = cosine_similarity(query_norm, item_norm)
-									timbre_sim = 0.5 * (timbre_sim + 1.0)
-								item_vec_mean, item_vec_median = extract_pitch_from_vector(
-									feature_vectors[idx]
-								)
-								item_mean = item_vec_mean
-								if item_mean is None:
-									item_mean = safe_positive(f0_mean)
-								item_pitch = select_pitch_value(item_mean, item_vec_median)
-								pitch_sim = pitch_similarity(query_pitch, item_pitch)
-								if pitch_sim is None:
-									similarity = timbre_sim
-								else:
-									similarity = (
-										PITCH_WEIGHT * pitch_sim
-										+ (1.0 - PITCH_WEIGHT) * timbre_sim
-									)
-								results.append(
-									{
-										"audio_id": audio_id,
-										"audio_url": url_for("serve_audio", audio_id=audio_id),
-										"similarity": similarity,
-										"instrument": instrument,
-										"note": note,
-										"octave": octave,
-										"dynamic": dynamic,
-										"file_path": file_path,
-									}
-								)
 
-							results.sort(key=lambda item: item["similarity"], reverse=True)
-							results = results[:5]
+						results.sort(key=lambda item: item["similarity"], reverse=True)
+						results = results[:5]
 
 	return render_template(
 		"index.html",
@@ -266,6 +279,7 @@ def index():
 		query_features=query_features,
 		query_audio_url=query_audio_url,
 		metric=metric,
+		query_filename=query_filename,
 	)
 
 
