@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>String Instrument Audio Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Audio Similarity Search</p>
+          <h1>String Instrument Finder</h1>
+          <p class="subtitle">
+            Upload a short clip and get the five closest matches from your dataset.
+          </p>
+        </div>
+        <div class="hero-card">
+          <form method="post" enctype="multipart/form-data">
+            <label class="upload">
+              <input type="file" name="audio" accept="audio/*" required />
+              <span>Choose audio file</span>
+            </label>
+            <label class="select">
+              <span>Similarity metric</span>
+              <select name="metric">
+                <option value="cosine" {% if metric == "cosine" %}selected{% endif %}>
+                  Cosine similarity
+                </option>
+                <option value="euclidean" {% if metric == "euclidean" %}selected{% endif %}>
+                  Euclidean distance
+                </option>
+              </select>
+            </label>
+            <button class="btn" type="submit">Search</button>
+          </form>
+          {% if message %}
+          <p class="message">{{ message }}</p>
+          {% endif %}
+        </div>
+      </header>
+
+      {% if query_audio_url %}
+      <section class="panel">
+        <h2>Query Audio</h2>
+        <audio controls src="{{ query_audio_url }}"></audio>
+      </section>
+      {% endif %}
+
+      {% if query_features %}
+      <section class="panel">
+        <h2>Query Features</h2>
+        <div class="feature-grid">
+          <div><strong>Mean energy</strong><span>{{ query_features.mean_energy }}</span></div>
+          <div><strong>ZCR</strong><span>{{ query_features.zcr }}</span></div>
+          <div><strong>F0 mean</strong><span>{{ query_features.f0_mean }}</span></div>
+          <div><strong>F0 median</strong><span>{{ query_features.f0_median }}</span></div>
+          <div><strong>Spectral centroid</strong><span>{{ query_features.spectral_centroid }}</span></div>
+          <div><strong>Bandwidth</strong><span>{{ query_features.bandwidth }}</span></div>
+        </div>
+      </section>
+      {% endif %}
+
+      {% if results %}
+      <section class="panel">
+        <h2>Top 5 Matches</h2>
+        <div class="results">
+          {% for row in results %}
+          <article class="result-card">
+            <div class="result-meta">
+              <h3>{{ row.instrument or "Unknown instrument" }}</h3>
+              <p>Similarity: {{ "%.4f" | format(row.similarity) }}</p>
+              <p>Note: {{ row.note or "-" }} {{ row.octave if row.octave is not none else "" }}</p>
+              <p>Dynamic: {{ row.dynamic or "-" }}</p>
+            </div>
+            <audio controls src="{{ row.audio_url }}"></audio>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    </main>
+  </body>
+</html>
