@@ -25,17 +25,6 @@
             {% if query_filename %}
             <input type="hidden" name="existing_file" value="{{ query_filename }}" />
             {% endif %}
-            <label class="select">
-              <span>Similarity metric</span>
-              <select name="metric">
-                <option value="cosine" {% if metric == "cosine" %}selected{% endif %}>
-                  Cosine similarity
-                </option>
-                <option value="euclidean" {% if metric == "euclidean" %}selected{% endif %}>
-                  Euclidean distance
-                </option>
-              </select>
-            </label>
             <button class="btn" type="submit">Search</button>
           </form>
           {% if message %}

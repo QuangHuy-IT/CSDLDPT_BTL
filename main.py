@@ -35,19 +35,6 @@ def cosine_similarity(vec_a, vec_b):
 	return float(np.dot(a, b) / denom)
 
 
-def euclidean_similarity(vec_a, vec_b):
-	a = np.asarray(vec_a, dtype=np.float32)
-	b = np.asarray(vec_b, dtype=np.float32)
-	if a.size == 0 or b.size == 0:
-		return 0.0
-	if a.size != b.size:
-		size = min(a.size, b.size)
-		a = a[:size]
-		b = b[:size]
-	dist = float(np.linalg.norm(a - b))
-	return 1.0 / (1.0 + dist)
-
-
 def align_vectors(query_vec, vectors):
 	if not vectors:
 		return np.asarray(query_vec, dtype=np.float32), []
@@ -122,11 +109,9 @@ def index():
 	query_features = None
 	query_audio_url = None
 	query_filename = None
-	metric = "cosine"
 
 	if request.method == "POST":
 		audio_file = request.files.get("audio")
-		metric = request.form.get("metric", "cosine")
 		save_path = None
 		saved_name = None
 		existing_name = (request.form.get("existing_file") or "").strip()
@@ -223,11 +208,9 @@ def index():
 							) = row
 							item_timbre = timbre_vectors[idx]
 							item_norm = standardize_vector(item_timbre, means, stds)
-							if metric == "euclidean":
-								timbre_sim = euclidean_similarity(query_norm, item_norm)
-							else:
-								timbre_sim = cosine_similarity(query_norm, item_norm)
-								timbre_sim = 0.5 * (timbre_sim + 1.0)
+							
+							timbre_sim = cosine_similarity(query_norm, item_norm)
+							timbre_sim = 0.5 * (timbre_sim + 1.0)
 
 							item_pitch = extract_pitch_from_vector(feature_vectors[idx])
 							if item_pitch is None:
@@ -263,7 +246,6 @@ def index():
 		message=message,
 		query_features=query_features,
 		query_audio_url=query_audio_url,
-		metric=metric,
 		query_filename=query_filename,
 	)
 
