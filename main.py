@@ -13,9 +13,8 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 ALLOWED_EXTS = {".wav", ".flac", ".mp3", ".ogg", ".m4a"}
-F0_MEAN_INDEX = 5
-F0_MEDIAN_INDEX = 6
-PITCH_INDICES = (F0_MEAN_INDEX, F0_MEDIAN_INDEX)
+F0_MEDIAN_INDEX = 5
+PITCH_INDICES = (F0_MEDIAN_INDEX,)
 PITCH_WEIGHT = 0.6
 
 app = Flask(__name__)
@@ -102,24 +101,14 @@ def safe_positive(value):
 
 
 def extract_pitch_from_vector(vec):
-	f0_mean = vec[F0_MEAN_INDEX] if vec.size > F0_MEAN_INDEX else None
 	f0_median = vec[F0_MEDIAN_INDEX] if vec.size > F0_MEDIAN_INDEX else None
-	return safe_positive(f0_mean), safe_positive(f0_median)
-
-
-def select_pitch_value(f0_mean, f0_median):
-	if f0_median is not None:
-		return f0_median
-	if f0_mean is not None:
-		return f0_mean
-	return None
+	return safe_positive(f0_median)
 
 
 def format_query_features(features):
 	return {
 		"mean_energy": f"{features['mean_energy']:.5f}",
 		"zcr": f"{features['zcr']:.5f}",
-		"f0_mean": f"{features['f0_mean']:.2f}",
 		"f0_median": f"{features['f0_median']:.2f}",
 		"spectral_centroid": f"{features['spectral_centroid']:.2f}",
 		"bandwidth": f"{features['bandwidth']:.2f}",
@@ -181,7 +170,7 @@ def index():
 				for (
 					audio_id,
 					feature_vector,
-					f0_mean,
+					f0_median,
 					file_path,
 					instrument,
 					note,
@@ -194,7 +183,7 @@ def index():
 						(
 							audio_id,
 							feature_vector,
-							f0_mean,
+							f0_median,
 							file_path,
 							instrument,
 							note,
@@ -219,15 +208,13 @@ def index():
 						]
 						means, stds = standardize_params(timbre_vectors)
 						query_norm = standardize_vector(query_timbre, means, stds)
-						query_pitch = select_pitch_value(
-							safe_positive(features.get("f0_mean")),
-							safe_positive(features.get("f0_median")),
-						)
+						query_pitch = safe_positive(features.get("f0_median"))
+
 						for idx, row in enumerate(valid_rows):
 							(
 								audio_id,
 								feature_vector,
-								f0_mean,
+								f0_median,
 								file_path,
 								instrument,
 								note,
@@ -241,13 +228,11 @@ def index():
 							else:
 								timbre_sim = cosine_similarity(query_norm, item_norm)
 								timbre_sim = 0.5 * (timbre_sim + 1.0)
-							item_vec_mean, item_vec_median = extract_pitch_from_vector(
-								feature_vectors[idx]
-							)
-							item_mean = item_vec_mean
-							if item_mean is None:
-								item_mean = safe_positive(f0_mean)
-							item_pitch = select_pitch_value(item_mean, item_vec_median)
+
+							item_pitch = extract_pitch_from_vector(feature_vectors[idx])
+							if item_pitch is None:
+								item_pitch = safe_positive(f0_median)
+							
 							pitch_sim = pitch_similarity(query_pitch, item_pitch)
 							if pitch_sim is None:
 								similarity = timbre_sim

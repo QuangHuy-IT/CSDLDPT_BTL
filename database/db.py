@@ -29,7 +29,7 @@ def fetch_all_features(conn):
             """
             SELECT f.audio_file_id,
                    f.feature_vector,
-                     f.f0_mean,
+                   f.f0_median,
                    a.file_path,
                    a.name_intrument,
                    a.note,

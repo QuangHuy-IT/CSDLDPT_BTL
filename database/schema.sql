@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS features (
   silence_ratio DOUBLE PRECISION,
   decay_rate DOUBLE PRECISION,
   harmonicity_ratio DOUBLE PRECISION,
-  f0_mean DOUBLE PRECISION,
+  f0_median DOUBLE PRECISION,
   spectral_centroid DOUBLE PRECISION,
   bandwidth DOUBLE PRECISION,
   spectral_flux DOUBLE PRECISION,
