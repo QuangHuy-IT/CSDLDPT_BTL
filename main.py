@@ -13,9 +13,6 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 ALLOWED_EXTS = {".wav", ".flac", ".mp3", ".ogg", ".m4a"}
-F0_MEDIAN_INDEX = 5
-PITCH_INDICES = (F0_MEDIAN_INDEX,)
-PITCH_WEIGHT = 0.6
 
 app = Flask(__name__)
 
@@ -54,43 +51,6 @@ def standardize_params(vectors):
 
 def standardize_vector(vec, means, stds):
 	return (vec - means) / stds
-
-
-def drop_features(vec, indices):
-	if vec.size == 0:
-		return vec
-	keep = np.ones(vec.size, dtype=bool)
-	for idx in indices:
-		if 0 <= idx < vec.size:
-			keep[idx] = False
-	return vec[keep]
-
-
-def hz_to_midi(f0_hz):
-	if f0_hz is None or not np.isfinite(f0_hz) or f0_hz <= 0.0:
-		return None
-	return 69.0 + 12.0 * np.log2(f0_hz / 440.0)
-
-
-def pitch_similarity(f0_a, f0_b, sigma=2.0):
-	midi_a = hz_to_midi(f0_a)
-	midi_b = hz_to_midi(f0_b)
-	if midi_a is None or midi_b is None:
-		return None
-	diff = abs(midi_a - midi_b)
-	return float(np.exp(-diff / sigma))
-
-
-def safe_positive(value):
-	if value is None or not np.isfinite(value) or value <= 0.0:
-		return None
-	return float(value)
-
-
-def extract_pitch_from_vector(vec):
-	f0_median = vec[F0_MEDIAN_INDEX] if vec.size > F0_MEDIAN_INDEX else None
-	return safe_positive(f0_median)
-
 
 def format_query_features(features):
 	return {
@@ -187,13 +147,10 @@ def index():
 					if query_vec.size == 0:
 						message = "Could not normalize features for comparison."
 					else:
-						query_timbre = drop_features(query_vec, PITCH_INDICES)
-						timbre_vectors = [
-							drop_features(vec, PITCH_INDICES) for vec in feature_vectors
-						]
+						query_timbre = query_vec
+						timbre_vectors = feature_vectors
 						means, stds = standardize_params(timbre_vectors)
 						query_norm = standardize_vector(query_timbre, means, stds)
-						query_pitch = safe_positive(features.get("f0_median"))
 
 						for idx, row in enumerate(valid_rows):
 							(
@@ -210,20 +167,8 @@ def index():
 							item_norm = standardize_vector(item_timbre, means, stds)
 							
 							timbre_sim = cosine_similarity(query_norm, item_norm)
-							timbre_sim = 0.5 * (timbre_sim + 1.0)
+							similarity = 0.5 * (timbre_sim + 1.0)
 
-							item_pitch = extract_pitch_from_vector(feature_vectors[idx])
-							if item_pitch is None:
-								item_pitch = safe_positive(f0_median)
-							
-							pitch_sim = pitch_similarity(query_pitch, item_pitch)
-							if pitch_sim is None:
-								similarity = timbre_sim
-							else:
-								similarity = (
-									PITCH_WEIGHT * pitch_sim
-									+ (1.0 - PITCH_WEIGHT) * timbre_sim
-								)
 							results.append(
 								{
 									"audio_id": audio_id,
