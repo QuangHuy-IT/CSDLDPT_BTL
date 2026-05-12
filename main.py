@@ -50,7 +50,8 @@ def standardize_params(vectors):
 
 
 def standardize_vector(vec, means, stds):
-	return (vec - means) / stds
+	norm_vec = (vec - means) / stds
+	return norm_vec
 
 def format_query_features(features):
 	return {
@@ -110,6 +111,7 @@ def index():
 				finally:
 					conn.close()
 
+				query_f0 = float(features.get("f0_median", 0.0))
 				valid_rows = []
 				feature_vectors = []
 				for (
@@ -124,6 +126,12 @@ def index():
 				) in rows:
 					if not feature_vector:
 						continue
+					
+					db_f0 = float(f0_median) if f0_median is not None else 0.0
+					if query_f0 > 0 and db_f0 > 0:
+						if abs(db_f0 - query_f0) / query_f0 > 0.15:
+							continue
+
 					valid_rows.append(
 						(
 							audio_id,
